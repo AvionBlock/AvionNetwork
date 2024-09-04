@@ -4,6 +4,7 @@
     {
         public abstract byte PacketId { get; }
         public abstract bool IsReliable { get; }
+        public abstract bool Unconnected { get; }
 
         public uint SessionId;
         public uint Sequence;
@@ -20,8 +21,11 @@
             dataStream[0] = PacketId;
             offset++;
 
-            Buffer.BlockCopy(BitConverter.GetBytes(SessionId), 0, dataStream, offset, sizeof(uint));
-            offset += sizeof(uint);
+            if (!Unconnected)
+            {
+                Buffer.BlockCopy(BitConverter.GetBytes(SessionId), 0, dataStream, offset, sizeof(uint));
+                offset += sizeof(uint);
+            }
 
             if (IsReliable)
             {
