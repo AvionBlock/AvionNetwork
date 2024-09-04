@@ -6,4 +6,12 @@
         Connecting,
         Connected
     }
+
+    public enum AVPacketId : byte
+    {
+        Login,
+        Logout,
+        Ping,
+        Ack
+    }
 }

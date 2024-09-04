@@ -49,9 +49,14 @@ namespace AvionNetwork
             ReceiveBuffer = new List<PacketInfo>();
             SendBuffer = new ConcurrentQueue<PacketInfo>();
             RemoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
+
+            AVPacketRegistry.RegisterPacket((byte)AVPacketId.Login, typeof(AVLogin));
+            AVPacketRegistry.RegisterPacket((byte)AVPacketId.Logout, typeof(AVLogin));
+            AVPacketRegistry.RegisterPacket((byte)AVPacketId.Ping, typeof(AVLogin));
+            AVPacketRegistry.RegisterPacket((byte)AVPacketId.Ack, typeof(AVLogin));
         }
 
-        public void Connect(string ip, ushort port, int timeout = 8000)
+        public void Connect(string ip, ushort port, byte[]? metaData = null, int timeout = 8000)
         {
             if (ConnectionState is SocketState.Connecting or SocketState.Connected) return;
             ConnectionState = SocketState.Connecting;
@@ -94,7 +99,7 @@ namespace AvionNetwork
                 UDPSocket.Bind(new IPEndPoint(IPAddress.Any, 0));
                 ReceiverThread = Task.Run(() => ReceiverLogic(CancellationTokenSource.Token));
                 SenderThread = Task.Run(() => SenderLogic(CancellationTokenSource.Token));
-                Send(new AVLogin());
+                Send(new AVLogin(metaData));
             }
             catch (Exception ex)
             {
