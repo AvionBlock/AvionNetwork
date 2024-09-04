@@ -40,6 +40,7 @@ namespace AvionNetwork
         public event SocketEvent? OnDisconnected;
         public event PacketEvent? OnPacketSent;
         public event PacketEvent? OnPacketReceived;
+        public event PacketEvent? OnPacketAcknowledged;
 
         public AvionClient(PacketRegistry<TPacket> packetRegistry)
         {
@@ -50,10 +51,12 @@ namespace AvionNetwork
             SendBuffer = new ConcurrentQueue<PacketInfo>();
             RemoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
 
+            OnPacketReceived += PacketReceived;
+
             AVPacketRegistry.RegisterPacket((byte)AVPacketId.Login, typeof(AVLogin));
-            AVPacketRegistry.RegisterPacket((byte)AVPacketId.Logout, typeof(AVLogin));
-            AVPacketRegistry.RegisterPacket((byte)AVPacketId.Ping, typeof(AVLogin));
-            AVPacketRegistry.RegisterPacket((byte)AVPacketId.Ack, typeof(AVLogin));
+            AVPacketRegistry.RegisterPacket((byte)AVPacketId.Logout, typeof(AVLogout));
+            AVPacketRegistry.RegisterPacket((byte)AVPacketId.Ping, typeof(AVPing));
+            AVPacketRegistry.RegisterPacket((byte)AVPacketId.Ack, typeof(AVAck));
         }
 
         public void Connect(string ip, ushort port, byte[]? metaData = null, int timeout = 8000)
@@ -141,15 +144,6 @@ namespace AvionNetwork
             SendBuffer.Enqueue(packetInfo);
         }
 
-        public void AcknowledgePacket(uint packetSequence)
-        {
-            foreach (var packet in ReliabilityQueue)
-            {
-                if (packet.Packet.Sequence == packetSequence)
-                    ReliabilityQueue.Remove(packet);
-            }
-        }
-
         public async Task SenderLogic(CancellationToken token)
         {
             while (!token.IsCancellationRequested)
@@ -223,7 +217,6 @@ namespace AvionNetwork
                     var received = await UDPSocket.ReceiveFromAsync(bufferMem, SocketFlags.None, RemoteEndPoint, token);
 
                     var endPoint = GetOrCreateEndPoint(receivedAddress);
-                    LastActive = Environment.TickCount64;
                     OnPacketReceived?.Invoke(new PacketInfo(AVPacketRegistry.GetPacketFromDataStream(bufferMem.Span), endPoint));
                 }
                 catch (SocketException ex)
@@ -283,6 +276,34 @@ namespace AvionNetwork
 
             endpoint.LastUsed = DateTime.UtcNow;
             return endpoint.EndPoint;
+        }
+
+        private void PacketReceived(PacketInfo packetInfo)
+        {
+            LastActive = Environment.TickCount64;
+
+            switch ((AVPacketId)packetInfo.Packet.PacketId)
+            {
+                case AVPacketId.Login:
+                    var loginPacket = (AVLogin)packetInfo.Packet;
+                    //Decrypt and check.
+                    ConnectionState = SocketState.Connected;
+                    Send(new AVAck(packetInfo.Packet.Sequence));
+                    break;
+                case AVPacketId.Logout:
+                    var logoutPacket = (AVLogout)packetInfo.Packet;
+                    break;
+                case AVPacketId.Ack:
+                    foreach (var packet in ReliabilityQueue)
+                    {
+                        if (packet.Packet.Sequence == packetInfo.Packet.Sequence)
+                        {
+                            ReliabilityQueue.Remove(packet);
+                            OnPacketAcknowledged?.Invoke(packet);
+                        }
+                    }
+                    break;
+            }
         }
 
         private struct EndPointInfo
